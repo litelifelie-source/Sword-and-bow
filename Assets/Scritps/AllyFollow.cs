@@ -1,202 +1,227 @@
 using UnityEngine;
 
+[RequireComponent(typeof(Rigidbody2D))]
 public class AllyFollow : MonoBehaviour
 {
-    [HideInInspector] public FormationManager formation;
-    [HideInInspector] public int slotIndex = -1;
+    [Header("Auto Register (Player Formation)")]
+    [Tooltip("ON이면 시작/Enable 시 플레이어의 FormationManager를 자동으로 찾아 Register 합니다.")]
+    public bool autoRegisterToPlayerFormation = true;
+
+    [Tooltip("플레이어 오브젝트 Tag (기본: Player). 플레이어에 이 Tag가 반드시 있어야 합니다.")]
+    public string playerTag = "Player";
+
+    [Tooltip("플레이어에서 FormationManager를 찾을 때, 자식까지 검색할지 여부입니다.\n- 플레이어 루트에 FormationManager가 없고 자식에 붙어있으면 ON이 필요합니다.")]
+    public bool findFormationInChildren = true;
+
+    [Tooltip("자동 등록 재시도 간격(초). 시작 시 못 찾았을 때 주기적으로 다시 찾습니다.")]
+    [Min(0.05f)] public float autoRegisterRetryInterval = 0.5f;
+
+    [Header("Formation (used by FormationManager / PlayerCapture)")]
+    [Tooltip("자동 등록을 쓰면 비워둬도 됩니다. 수동으로 특정 Formation에 붙이고 싶으면 직접 넣어도 됩니다.")]
+    public FormationManager formation; // ✅ 타입: FormationManager
+    [Tooltip("FormationManager가 할당하는 슬롯 인덱스입니다. 직접 수정하지 않는 것을 권장합니다.")]
+    public int slotIndex = -1;
 
     [Header("Move")]
-    public float moveSpeed = 2.5f;
-    public float stopDistance = 0.25f;
+    public float moveSpeed = 2.2f;
 
-    [Header("State")]
-    public bool blockMove = false;
+    [Header("Stop Distances")]
+    public float formationStopDist = 0.08f;
+    private float _chaseStopDist = 1.2f;
 
-    [Header("Combat Chase")]
-    public bool chaseMode = false;
-    public Transform chaseTarget;
-    public float chaseStopDistance = 1.2f;
-
-    // ✅ 추가: 좌표(포위 슬롯) 추적 모드
-    private bool chasePointMode = false;
-    private Vector2 chasePoint;
+    [Header("Animator (optional)")]
+    public Animator anim;
+    public string paramIsMoving = "IsMoving";
+    public string paramMoveX = "MoveX";
+    public string paramMoveY = "MoveY";
 
     private Rigidbody2D rb;
-    private Animator animator;
-    private SpriteRenderer sr;
 
-    private Vector2 lastMoveDir = Vector2.down;
-    public Vector2 LastMoveDir => lastMoveDir;
+    private Transform _chaseTarget;
+    private bool _blockMove = false;
+    private Vector2 _lastDir = Vector2.down;
+
+    private float _nextRetryTime = 0f;
+    private bool _registeredToFormation = false;
 
     private void Awake()
     {
         rb = GetComponent<Rigidbody2D>();
+        rb.freezeRotation = true;
 
-        animator = GetComponent<Animator>();
-        if (animator == null)
-            animator = GetComponentInChildren<Animator>();
-
-        sr = GetComponentInChildren<SpriteRenderer>();
+        if (anim == null)
+            anim = GetComponentInChildren<Animator>(true);
     }
 
-    public void SetBlockMove(bool v)
+    private void OnEnable()
     {
-        blockMove = v;
-        if (blockMove) StopNow();
-    }
+        _registeredToFormation = false;
+        _nextRetryTime = 0f;
 
-    public void StartChase(Transform target, float stopDist)
-    {
-        if (target == null) return;
-
-        chaseMode = true;
-        chaseTarget = target;
-        chasePointMode = false; // ✅ 중요
-        chaseStopDistance = Mathf.Max(0.1f, stopDist);
-        blockMove = false;
-    }
-
-    // ✅ 추가: "좌표"를 추적
-    public void StartChasePosition(Vector2 point, float stopDist)
-    {
-        chaseMode = true;
-        chaseTarget = null;
-        chasePointMode = true;
-        chasePoint = point;
-        chaseStopDistance = Mathf.Max(0.05f, stopDist);
-        blockMove = false;
-    }
-
-    public void StopChase()
-    {
-        chaseMode = false;
-        chaseTarget = null;
-        chasePointMode = false; // ✅ 중요
-    }
-
-    public void StopNow()
-    {
-        if (rb) rb.linearVelocity = Vector2.zero;
-
-        if (animator != null)
-        {
-            animator.SetBool("IsMoving", false);
-            SetMoveParamsAndFlip(lastMoveDir);
-        }
-    }
-
-    private void FixedUpdate()
-    {
-        if (blockMove)
-        {
-            StopNow();
-            return;
-        }
-
-        if (chaseMode)
-        {
-            Vector2 pos = rb ? rb.position : (Vector2)transform.position;
-
-            Vector2 targetPos;
-
-            if (chasePointMode)
-            {
-                targetPos = chasePoint;
-            }
-            else
-            {
-                if (chaseTarget == null || !chaseTarget.gameObject.activeInHierarchy)
-                {
-                    StopChase();
-                    return;
-                }
-                targetPos = chaseTarget.position;
-            }
-
-            Vector2 delta = targetPos - pos;
-            float dist = delta.magnitude;
-
-            if (dist <= chaseStopDistance)
-            {
-                StopNow();
-                return;
-            }
-
-            Vector2 dir = delta / dist;
-            lastMoveDir = dir;
-
-            if (rb)
-                rb.linearVelocity = dir * moveSpeed;
-            else
-                transform.position = Vector2.MoveTowards(transform.position, targetPos, moveSpeed * Time.fixedDeltaTime);
-
-            if (animator != null)
-            {
-                animator.SetBool("IsMoving", true);
-                SetMoveParamsAndFlip(dir);
-            }
-
-            return;
-        }
-
-        if (formation == null || slotIndex < 0) return;
-
-        Vector2 slotPos = formation.GetSlotWorldPosition(slotIndex);
-        Vector2 pos2 = rb ? rb.position : (Vector2)transform.position;
-
-        Vector2 delta2 = slotPos - pos2;
-        float dist2 = delta2.magnitude;
-
-        if (dist2 <= stopDistance)
-        {
-            StopNow();
-            return;
-        }
-
-        Vector2 dir2 = delta2 / dist2;
-        lastMoveDir = dir2;
-
-        if (rb)
-            rb.linearVelocity = dir2 * moveSpeed;
-        else
-            transform.position = Vector2.MoveTowards(transform.position, slotPos, moveSpeed * Time.fixedDeltaTime);
-
-        if (animator != null)
-        {
-            animator.SetBool("IsMoving", true);
-            SetMoveParamsAndFlip(dir2);
-        }
-    }
-
-    private void SetMoveParamsAndFlip(Vector2 direction)
-    {
-        if (animator == null) return;
-
-        Vector2 d = direction;
-        if (d.sqrMagnitude < 0.0001f)
-            d = lastMoveDir;
-
-        if (Mathf.Abs(d.x) > Mathf.Abs(d.y))
-            d = d.x > 0 ? Vector2.right : Vector2.left;
-        else
-            d = d.y > 0 ? Vector2.up : Vector2.down;
-
-        if (d.x != 0f)
-        {
-            animator.SetFloat("MoveX", 1f);
-            animator.SetFloat("MoveY", 0f);
-            if (sr != null) sr.flipX = (d == Vector2.left);
-        }
-        else
-        {
-            animator.SetFloat("MoveX", 0f);
-            animator.SetFloat("MoveY", d.y);
-        }
+        if (autoRegisterToPlayerFormation)
+            TryAutoRegister(force: true);
     }
 
     private void OnDisable()
     {
+        AutoUnregister();
+    }
+
+    private void OnDestroy()
+    {
+        AutoUnregister();
+    }
+
+    private void FixedUpdate()
+    {
+        // ✅ 자동 등록: 시작에 못 찾았으면 주기적으로 재시도
+        if (autoRegisterToPlayerFormation && (formation == null || !_registeredToFormation))
+        {
+            TryAutoRegister(force: false);
+        }
+
+        if (_blockMove)
+        {
+            StopInternal();
+            return;
+        }
+
+        // 1) 전투 추적 우선
+        if (_chaseTarget != null && _chaseTarget.gameObject.activeInHierarchy)
+        {
+            FollowPoint(_chaseTarget.position, _chaseStopDist);
+            return;
+        }
+
+        // 2) 진형 따라가기
+        if (formation != null && slotIndex >= 0)
+        {
+            Vector2 slotPos = formation.GetSlotWorldPosition(slotIndex);
+            FollowPoint(slotPos, formationStopDist);
+            return;
+        }
+
+        StopInternal();
+    }
+
+    // === AllyAttack에서 호출하는 API ===
+
+    public void StartChase(Transform target, float stopDist)
+    {
+        _chaseTarget = target;
+        _chaseStopDist = Mathf.Max(0.01f, stopDist);
+
+        if (_blockMove)
+            StopInternal();
+    }
+
+    public void StopChase()
+    {
+        _chaseTarget = null;
+    }
+
+    public void SetBlockMove(bool block)
+    {
+        _blockMove = block;
+        if (_blockMove)
+            StopInternal();
+    }
+
+    // === Auto Register ===
+
+    private void TryAutoRegister(bool force)
+    {
+        if (!force && Time.time < _nextRetryTime) return;
+        _nextRetryTime = Time.time + autoRegisterRetryInterval;
+
+        // 이미 수동으로 formation이 들어와 있고 등록만 안 된 상태면 Register만 시도
         if (formation != null)
-            formation.Unregister(this);
+        {
+            if (!_registeredToFormation)
+            {
+                formation.Register(this);
+                _registeredToFormation = true;
+            }
+            return;
+        }
+
+        // 플레이어 찾기
+        GameObject player = GameObject.FindGameObjectWithTag(playerTag);
+        if (player == null) return;
+
+        FormationManager fm = null;
+
+        if (findFormationInChildren)
+            fm = player.GetComponentInChildren<FormationManager>(true);
+        else
+            fm = player.GetComponent<FormationManager>();
+
+        if (fm == null) return;
+
+        formation = fm;
+        formation.Register(this);
+        _registeredToFormation = true;
+    }
+
+    private void AutoUnregister()
+    {
+        if (formation == null) return;
+
+        // 등록 여부와 무관하게 안전하게 시도
+        formation.Unregister(this);
+        _registeredToFormation = false;
+
+        // 필요하면 formation 참조도 끊고 싶으면 아래 주석 해제
+        // formation = null;
+        // slotIndex = -1;
+    }
+
+    // === 내부 유틸 ===
+
+    private void FollowPoint(Vector2 targetPos, float stopDist)
+    {
+        Vector2 me = rb.position;
+        Vector2 to = targetPos - me;
+
+        float stopSqr = stopDist * stopDist;
+        if (to.sqrMagnitude <= stopSqr)
+        {
+            StopInternal();
+            return;
+        }
+
+        Vector2 dir = to.normalized;
+
+#if UNITY_6000_0_OR_NEWER
+        rb.linearVelocity = dir * moveSpeed;
+#else
+        rb.velocity = dir * moveSpeed;
+#endif
+
+        if (dir.sqrMagnitude > 0.0001f)
+            _lastDir = dir;
+
+        UpdateAnim(true, _lastDir);
+    }
+
+    private void StopInternal()
+    {
+        if (rb != null)
+        {
+#if UNITY_6000_0_OR_NEWER
+            rb.linearVelocity = Vector2.zero;
+#else
+            rb.velocity = Vector2.zero;
+#endif
+        }
+        UpdateAnim(false, _lastDir);
+    }
+
+    private void UpdateAnim(bool moving, Vector2 dir)
+    {
+        if (anim == null) return;
+        anim.SetBool(paramIsMoving, moving);
+        anim.SetFloat(paramMoveX, dir.x);
+        anim.SetFloat(paramMoveY, dir.y);
     }
 }

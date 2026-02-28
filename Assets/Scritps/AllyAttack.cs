@@ -1,60 +1,115 @@
+using System.Collections;
 using UnityEngine;
 
 public class AllyAttack : MonoBehaviour
 {
     [Header("Targeting")]
     public LayerMask enemyLayer;
-    public float detectRange = 5f;
+    public float detectRange = 6f;
     public float attackRange = 1.5f;
+    public float hysteresis = 0.15f;
 
-    [Header("Attack")]
-    public float attackCooldown = 0.6f;
+    [Tooltip("추적 중 더 가까운 적으로 갈아탈지(0~1). 낮을수록 쉽게 갈아탐. 예: 0.6 = 40% 더 가까우면 교체")]
+    [Range(0.1f, 1f)]
+    public float retargetRatio = 0.6f;
+
+    [Tooltip("타겟 재탐색 주기(초). 너무 자주 하면 성능↓, 너무 길면 멍청해짐")]
+    public float retargetInterval = 0.12f;
+
+    [Header("Damage")]
     public int damage = 5;
-
-    [Header("Hit")]
     public float attackOffset = 0.75f;
     public float hitRadius = 0.45f;
 
-    [Header("Surround Move")]
-    public float surroundStopDist = 0.12f;
-    public float surroundRadiusScale = 0.95f; // attackRange * scale
+    [Header("Timing")]
+    public float attackCooldown = 0.6f;
+    public float hitDelay = 0.12f;
+    public float attackEndDelay = 0.10f;
 
+    [Header("Animator Params")]
+    public string trigAttack = "Attack";
+    public string boolAttackR = "AttackR";
+    public string boolAttackL = "AttackL";
+
+    // ✅ 애니메이션용(4방향 스냅)
+    private Vector2 attackDir = Vector2.right;
+
+    // ✅ 판정용(대각선 포함)
+    private Vector2 hitDir = Vector2.right;
+
+    private Animator anim;
+    private Transform ownerRoot;
     private AllyFollow follow;
-    private Animator animator;
-    private float nextAttackTime;
+    private UnitTeam myTeam;
+
+    public bool IsAttacking { get; private set; }
 
     private Transform target;
-    private Transform lastTargetRoot;
+
+    private float nextAttackTime;
+    private Coroutine attackCo;
+
+    private int playerLayer;
+    private float nextRetargetTime;
 
     private void Awake()
     {
-        follow = GetComponent<AllyFollow>();
+        follow = GetComponentInParent<AllyFollow>();
 
-        animator = GetComponent<Animator>();
-        if (animator == null) animator = GetComponentInChildren<Animator>();
-    }
+        anim = GetComponent<Animator>();
+        if (anim == null) anim = GetComponentInChildren<Animator>(true);
 
-    private void OnDisable()
-    {
-        if (lastTargetRoot != null)
-            SurroundCoordinator.RemoveAgent(lastTargetRoot, GetInstanceID());
+        ownerRoot = transform.root;
+        myTeam = GetComponentInParent<UnitTeam>();
+
+        playerLayer = LayerMask.NameToLayer("Player");
+
+        if (anim == null)
+            Debug.LogError("[AllyAttack] Animator를 찾지 못했습니다.", this);
     }
 
     private void Update()
     {
-        // 타겟이 Enemy가 아니게 되었거나, 비활성이면 갱신
-        if (target == null || !target.gameObject.activeInHierarchy || !IsEnemyTarget(target))
-            target = FindClosestEnemyOnly();
+        if (myTeam != null && myTeam.team != Team.Ally)
+            return;
 
-        // 타겟 없으면: 추격/정지 해제 + 슬롯 제거
+        if (IsAttacking) return;
+
+        if (!IsValidEnemyTarget(target))
+            target = null;
+
+        float enterRange = Mathf.Max(0.01f, attackRange - hysteresis);
+
+        // ✅ 1) 근접 우선권: 공격 진입 범위 안의 적을 최우선
+        Transform close = FindClosestEnemy(enterRange);
+        if (IsValidEnemyTarget(close))
+            target = close;
+
+        // ✅ 2) 주기적으로 더 좋은 타겟으로 갱신
+        if (Time.time >= nextRetargetTime)
+        {
+            nextRetargetTime = Time.time + Mathf.Max(0.02f, retargetInterval);
+
+            if (target == null)
+            {
+                target = FindClosestEnemy(detectRange);
+            }
+            else
+            {
+                Transform best = FindClosestEnemy(detectRange);
+                if (IsValidEnemyTarget(best) && best != target)
+                {
+                    float dOld = ((Vector2)target.position - (Vector2)ownerRoot.position).sqrMagnitude;
+                    float dNew = ((Vector2)best.position - (Vector2)ownerRoot.position).sqrMagnitude;
+
+                    if (dNew < dOld * retargetRatio)
+                        target = best;
+                }
+            }
+        }
+
         if (target == null)
         {
-            if (lastTargetRoot != null)
-            {
-                SurroundCoordinator.RemoveAgent(lastTargetRoot, GetInstanceID());
-                lastTargetRoot = null;
-            }
-
             if (follow != null)
             {
                 follow.StopChase();
@@ -63,19 +118,10 @@ public class AllyAttack : MonoBehaviour
             return;
         }
 
-        // 타겟 루트가 바뀌면 이전 그룹에서 제거
-        Transform targetRoot = target.root;
-        if (lastTargetRoot != targetRoot)
-        {
-            if (lastTargetRoot != null)
-                SurroundCoordinator.RemoveAgent(lastTargetRoot, GetInstanceID());
-            lastTargetRoot = targetRoot;
-        }
+        float dist = Vector2.Distance(ownerRoot.position, target.position);
+        bool inAttackEnter = dist <= enterRange;
 
-        float sqrDist = (target.position - transform.position).sqrMagnitude;
-        float atkSqr = attackRange * attackRange;
-
-        if (sqrDist <= atkSqr)
+        if (inAttackEnter)
         {
             if (follow != null)
             {
@@ -83,36 +129,28 @@ public class AllyAttack : MonoBehaviour
                 follow.SetBlockMove(true);
             }
 
-            if (Time.time >= nextAttackTime)
-            {
-                DoAttackEnemyOnly();
-                nextAttackTime = Time.time + attackCooldown;
-            }
+            Vector2 dir = ((Vector2)target.position - (Vector2)ownerRoot.position);
+            TryStartAttack(dir);
+            return;
         }
-        else
+
+        if (follow != null)
         {
-            if (follow != null)
-            {
-                follow.SetBlockMove(false);
-
-                float baseRadius = Mathf.Max(1.0f, attackRange * surroundRadiusScale);
-                Vector2 slotPos = SurroundCoordinator.GetSlotPosition(targetRoot, GetInstanceID(), baseRadius);
-
-                // ✅ 타겟이 아니라 "슬롯 좌표"로 이동 -> 포위진 펼쳐짐
-                follow.StartChasePosition(slotPos, surroundStopDist);
-            }
+            follow.SetBlockMove(false);
+            follow.StartChase(target, attackRange * 0.9f);
         }
     }
 
-    private bool IsEnemyTarget(Transform t)
+    private bool IsValidEnemyTarget(Transform t)
     {
         if (t == null) return false;
+        if (!t.gameObject.activeInHierarchy) return false;
+
+        if (t.gameObject.layer == playerLayer) return false;
+        if (t.transform.root == ownerRoot) return false;
 
         UnitTeam ut = t.GetComponentInParent<UnitTeam>();
-        if (ut == null) return false;
-        if (ut.team != Team.Enemy) return false;
-
-        if (t.root == transform.root) return false;
+        if (ut == null || ut.team != Team.Enemy) return false;
 
         Health hp = t.GetComponentInParent<Health>();
         if (hp != null && hp.IsDown) return false;
@@ -120,69 +158,148 @@ public class AllyAttack : MonoBehaviour
         return true;
     }
 
-    private Transform FindClosestEnemyOnly()
+    private Transform FindClosestEnemy(float range)
     {
-        Collider2D[] hits = Physics2D.OverlapCircleAll(transform.position, detectRange, enemyLayer);
+        if (range <= 0f) return null;
+
+        Collider2D[] hits = Physics2D.OverlapCircleAll(ownerRoot.position, range, enemyLayer);
         if (hits == null || hits.Length == 0) return null;
 
         Transform best = null;
         float bestSqr = float.MaxValue;
+        Vector2 me = ownerRoot.position;
 
         for (int i = 0; i < hits.Length; i++)
         {
-            var hit = hits[i];
-            if (hit == null) continue;
+            Collider2D h = hits[i];
+            if (h == null) continue;
 
-            Transform t = hit.transform;
-            if (t.root == transform.root) continue;
+            Transform cand = h.transform;
+            if (!IsValidEnemyTarget(cand)) continue;
 
-            UnitTeam other = hit.GetComponentInParent<UnitTeam>();
-            if (other == null || other.team != Team.Enemy) continue;
-
-            Health hp = hit.GetComponentInParent<Health>();
-            if (hp != null && hp.IsDown) continue;
-
-            float sqr = (t.position - transform.position).sqrMagnitude;
+            float sqr = ((Vector2)cand.position - me).sqrMagnitude;
             if (sqr < bestSqr)
             {
                 bestSqr = sqr;
-                best = t;
+                best = cand;
             }
         }
-
         return best;
     }
 
-    private void DoAttackEnemyOnly()
-{
-    if (animator != null)
-        animator.SetTrigger("Attack");
-
-    Vector2 dir = Vector2.right;
-    if (follow != null && follow.LastMoveDir.sqrMagnitude > 0.0001f)
-        dir = follow.LastMoveDir.normalized;
-
-    Vector2 center = (Vector2)transform.position + dir * attackOffset;
-
-    Collider2D[] hits = Physics2D.OverlapCircleAll(center, hitRadius, enemyLayer);
-    for (int i = 0; i < hits.Length; i++)
+    private Vector2 Snap4(Vector2 d)
     {
-        var hit = hits[i];
-        if (hit == null) continue;
+        if (d.sqrMagnitude < 0.0001f) return attackDir;
 
-        // ✅ 자기 자신/같은 루트 제외
-        if (hit.transform.root == transform.root) continue;
-
-        // ✅ 플레이어는 무조건 제외 (레이어/마스크 꼬여도 안전)
-        if (hit.CompareTag("Player") || hit.GetComponentInParent<PlayerController>() != null)
-            continue;
-
-        UnitTeam other = hit.GetComponentInParent<UnitTeam>();
-        if (other == null || other.team != Team.Enemy) continue;
-
-        Health hp = hit.GetComponentInParent<Health>();
-        if (hp != null && !hp.IsDown)
-            hp.TakeDamage(damage);
+        if (Mathf.Abs(d.x) > Mathf.Abs(d.y))
+            return d.x > 0 ? Vector2.right : Vector2.left;
+        else
+            return d.y > 0 ? Vector2.up : Vector2.down;
     }
-}
+
+    private void TryStartAttack(Vector2 dir)
+    {
+        if (anim == null) return;
+        if (Time.time < nextAttackTime) return;
+        if (IsAttacking) return;
+
+        nextAttackTime = Time.time + attackCooldown;
+
+        // ✅ 판정용 방향(대각선 포함)
+        if (dir.sqrMagnitude < 0.0001f) dir = Vector2.right;
+        hitDir = dir.normalized;
+
+        // ✅ 애니용 방향(4방향 스냅)
+        attackDir = Snap4(dir);
+
+        // (요구사항 유지) 위=오른쪽, 아래=왼쪽
+        if (attackDir == Vector2.up) attackDir = Vector2.right;
+        else if (attackDir == Vector2.down) attackDir = Vector2.left;
+
+        anim.SetBool(boolAttackR, false);
+        anim.SetBool(boolAttackL, false);
+        if (attackDir == Vector2.left) anim.SetBool(boolAttackL, true);
+        else anim.SetBool(boolAttackR, true);
+
+        IsAttacking = true;
+
+        anim.ResetTrigger(trigAttack);
+        anim.SetTrigger(trigAttack);
+
+        if (attackCo != null) StopCoroutine(attackCo);
+        attackCo = StartCoroutine(AttackRoutine());
+    }
+
+    private IEnumerator AttackRoutine()
+    {
+        yield return new WaitForSeconds(hitDelay);
+
+        if (myTeam != null && myTeam.team != Team.Ally)
+        {
+            EndAttackImmediate();
+            yield break;
+        }
+
+        // 타겟이 유효하면 타격
+        if (IsValidEnemyTarget(target))
+            DoDamageNow();
+
+        if (attackEndDelay > 0f)
+            yield return new WaitForSeconds(attackEndDelay);
+
+        EndAttackImmediate();
+    }
+
+    private void DoDamageNow()
+    {
+        // ✅ 판정은 hitDir(대각선 포함)로 전방 오프셋
+        Vector2 center = (Vector2)ownerRoot.position + hitDir * attackOffset;
+
+        Collider2D[] hits = Physics2D.OverlapCircleAll(center, hitRadius, enemyLayer);
+
+        for (int i = 0; i < hits.Length; i++)
+        {
+            Collider2D col = hits[i];
+            if (col == null) continue;
+
+            if (col.gameObject.layer == playerLayer) continue;
+            if (col.transform.root == ownerRoot) continue;
+
+            UnitTeam ut = col.GetComponentInParent<UnitTeam>();
+            if (ut == null || ut.team != Team.Enemy) continue;
+
+            Health hp = col.GetComponentInParent<Health>();
+            if (hp != null && !hp.IsDown)
+                hp.TakeDamage(damage);
+        }
+    }
+
+    private void EndAttackImmediate()
+    {
+        IsAttacking = false;
+
+        if (anim != null)
+        {
+            anim.SetBool(boolAttackR, false);
+            anim.SetBool(boolAttackL, false);
+        }
+
+        if (follow != null)
+            follow.SetBlockMove(false);
+    }
+
+    // === (호환용) 애니 이벤트가 남아있어도 안전 ===
+    public void DealDamage() { /* intentionally empty - damage handled by coroutine */ }
+
+    public void AnimEvent_EndAttack()
+    {
+        EndAttackImmediate();
+    }
+
+    public void PlayAttackSfx()
+    {
+        AudioSource audio = GetComponent<AudioSource>();
+        if (audio != null && audio.clip != null)
+            audio.PlayOneShot(audio.clip);
+    }
 }

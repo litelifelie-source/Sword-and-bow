@@ -711,6 +711,8 @@ GameObject:
   - component: {fileID: 858633050}
   - component: {fileID: 858633052}
   - component: {fileID: 858633051}
+  - component: {fileID: 858633054}
+  - component: {fileID: 858633053}
   m_Layer: 7
   m_Name: "Named-\uC794\uB290"
   m_TagString: Untagged
@@ -837,6 +839,8 @@ MonoBehaviour:
   barWidth: 1.2
   barHeight: 0.15
   downOnZeroHP: 1
+  currentShield: 0
+  shieldExpireTime: 0
   isInvincible: 0
   disableBehavioursOnDown: []
   disableCollidersOnDown: []
@@ -983,8 +987,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 8d63b339683400d4e8173c6e94a9f4c0, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::JeanneJudgmentProc
-  procChance: 0.05
-  cooldown: 60
   anim: {fileID: 858633041}
   animStatePrayer: "named_\uC794\uB290_\uC2EC\uD310\uC758 \uAC80(\uAD81\uADF9\uAE30)"
   scriptsToLock:
@@ -995,6 +997,7 @@ MonoBehaviour:
   forceStopEachFixed: 1
   health: {fileID: 0}
   invincibleWhileCasting: 1
+  skill: {fileID: 0}
   voiceSource: {fileID: 858633052}
   musicSource: {fileID: 858633051}
   judgmentVoice: {fileID: 8300000, guid: 6f66b522627f65d49b13e447b31fbfa1, type: 3}
@@ -1215,6 +1218,54 @@ AudioSource:
     m_PreInfinity: 2
     m_PostInfinity: 2
     m_RotationOrder: 4
+--- !u!114 &858633053
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 858633039}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9a8b61d43900bf949950bd16133bab6d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::JeanneSkillDistributor
+  judgmentChance: 0.05
+  shieldChance: 0.2
+  judgmentCooldown: 120
+  shieldCooldown: 90
+  judgmentProc: {fileID: 858633049}
+  shieldProc: {fileID: 858633054}
+  debugLogRoll: 0
+--- !u!114 &858633054
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 858633039}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a5e9b269dfea62544b6532cf243bc41c, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::JeanneGuardShieldProc
+  shieldAmount: 40
+  shieldDuration: 6
+  applyToSelf: 1
+  applyToNearbyAllies: 1
+  radius: 6
+  castTime: 0.25
+  scriptsToLock: []
+  rb: {fileID: 0}
+  castingDamping: 50
+  forceStopEachFixed: 1
+  health: {fileID: 0}
+  invincibleWhileCasting: 1
+  ownerTeam: {fileID: 0}
+  anim: {fileID: 0}
+  animStateShield: Ultimate_Shield
+  sfxSource: {fileID: 0}
+  shieldSfx: {fileID: 0}
 --- !u!1 &907853379
 GameObject:
   m_ObjectHideFlags: 0
@@ -1653,6 +1704,8 @@ MonoBehaviour:
   barWidth: 1.2
   barHeight: 0.15
   downOnZeroHP: 1
+  currentShield: 0
+  shieldExpireTime: 0
   isInvincible: 0
   disableBehavioursOnDown: []
   disableCollidersOnDown: []

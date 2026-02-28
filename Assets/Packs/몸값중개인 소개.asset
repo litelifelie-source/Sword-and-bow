@@ -1,0 +1,53 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 31072b4819e1a334f853ec3b2694c7ba, type: 3}
+  m_Name: "\uBAB8\uAC12\uC911\uAC1C\uC778 \uC18C\uAC1C"
+  m_EditorClassIdentifier: Assembly-CSharp::DailyDialoguePack
+  questId: D1_Sell
+  nodes:
+  - key: D1_Sell
+    speaker: "\uC911\uAC1C\uC778"
+    speakerId: Sell_01
+    main:
+    - speaker: 
+      speakerId: 
+      text: "\uBC18\uAC11\uB124, \uB3C8\uC744 \uBC8C\uACE0 \uC2F6\uC9C0 \uC54A\uB098?"
+      autoAdvanceSeconds: 4.5
+      audience: 0
+    - speaker: 
+      speakerId: 
+      text: "\uB098\uB294 \uBAB8\uAC12\uC744 \uAC70\uB798\uD558\uB294 \uC0AC\uB78C\uC774\uB77C\uB124."
+      autoAdvanceSeconds: 5
+      audience: 0
+    - speaker: 
+      speakerId: 
+      text: "\uBD88\uBC95\uC774\uB0D0\uACE0..? \uADF8\uB0E5 \uC7AC\uB2A5 \uC788\uC5B4
+        \uBCF4\uC774\uB294 \uB140\uC11D\uC744 \uB118\uAE30\uB294 \uAC83\uBFD0\uC774\uC57C."
+      autoAdvanceSeconds: 6
+      audience: 0
+    - speaker: 
+      speakerId: 
+      text: "\uC544, \uC548\uC2EC\uD574. \uB098\uB294 \uC77C\uBC18 \uBCD1\uC0AC\uB9CC
+        \uCDE8\uAE09\uD574. \uB124 \uB3D9\uB8CC\uB4E4\uC740 \uCDE8\uAE09 \uC548 \uD574."
+      autoAdvanceSeconds: 7
+      audience: 0
+    - speaker: 
+      speakerId: 
+      text: "\uC544\uBB34\uD2BC \uB3C8 \uBC8C\uACE0 \uC2F6\uB2E4\uBA74 \uB0B4\uAC8C
+        \uB9D0 \uAC78\uB77C\uACE0. \uBC14\uB85C \uC815\uC0B0\uD574\uC8FC\uC9C0."
+      autoAdvanceSeconds: 7
+      audience: 0
+    ally: []
+    lines: []
+    playOnlyOnce: 0
+    defaultAutoAdvanceSeconds: 0
+    perLineAutoAdvanceSeconds: []

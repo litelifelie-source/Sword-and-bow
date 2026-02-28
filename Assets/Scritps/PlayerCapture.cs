@@ -1,99 +1,126 @@
 using UnityEngine;
+using System.Collections.Generic;
 
 public class PlayerCapture : MonoBehaviour
 {
-    public float captureRadius = 1.5f;
-    public LayerMask enemyLayer;
-    public FormationManager formationManager;
+    [Header("Capture")]
+    [Tooltip("플레이어 기준 원형 반경 안의 대상만 탐색합니다.")]
+    public float captureRadius = 1.2f;
 
-    void Awake()
+    [Tooltip("영입 대상으로 판정할 레이어 마스크입니다. (Physics2D OverlapCircleAll 필터)")]
+    public LayerMask targetMask;
+
+    [Tooltip("영입 시도 키")]
+    public KeyCode captureKey = KeyCode.F;
+
+    [Header("Rules")]
+    [Tooltip("true이면 다운 상태(Health.IsDown)일 때만 영입 가능합니다.")]
+    public bool requireDownState = true;
+
+    [Header("Fail Behavior")]
+    [Tooltip("영입 실패 시 대상 유닛을 제거(사라지게)할지 여부입니다.")]
+    public bool destroyOnFail = true;
+
+    [Tooltip("destroyOnFail=true일 때, 비활성화로 숨길지(체크) / Destroy로 제거할지(해제)")]
+    public bool disableInsteadOfDestroy = false;
+
+    [Header("Debug")]
+    [Tooltip("디버그 로그 출력")]
+    public bool debugLog = true;
+
+    private readonly HashSet<Transform> _processedRoots = new();
+
+    private void Update()
     {
-        if (formationManager == null)
-            formationManager = GetComponent<FormationManager>();
-    }
+        if (!Input.GetKeyDown(captureKey))
+            return;
 
-    void Update()
-    {
-        if (Input.GetKeyDown(KeyCode.E))
-            TryCapture();
-    }
-
-    void TryCapture()
-    {
-        int stun = LayerMask.NameToLayer("Stun");
-
-        LayerMask recruitMask = enemyLayer;
-        if (stun != -1) recruitMask |= (1 << stun);
-
-        Collider2D[] hits = Physics2D.OverlapCircleAll(transform.position, captureRadius, recruitMask);
+        var hits = Physics2D.OverlapCircleAll(transform.position, captureRadius, targetMask);
 
         if (hits == null || hits.Length == 0)
         {
-            Debug.Log("근처에 적 없음");
+            if (debugLog) Debug.Log("[Capture] 범위 내 대상 없음");
             return;
         }
 
-        UnitTeam team = null;
-        Health hp = null;
-        Capturable cap = null;
+        _processedRoots.Clear();
 
-        for (int i = 0; i < hits.Length; i++)
+        foreach (var col in hits)
         {
-            UnitTeam t = hits[i].GetComponentInParent<UnitTeam>();
-            if (t == null || t.team != Team.Enemy) continue;
+            if (col == null) continue;
 
-            Health h = t.GetComponentInChildren<Health>(true);
-            if (h == null || !h.IsDown) continue;
+            Transform root = col.transform.root;
 
-            Capturable c = t.GetComponentInChildren<Capturable>(true);
-            if (c == null) continue;
+            // 동일 유닛 중복 판정 방지
+            if (_processedRoots.Contains(root))
+                continue;
 
-            team = t; hp = h; cap = c;
-            break;
-        }
+            _processedRoots.Add(root);
 
-        if (team == null)
-        {
-            Debug.Log("기절한 적이 없음 (체력이 0일 때만 영입 가능)");
+            UnitTeam team = root.GetComponent<UnitTeam>();
+            if (team == null || team.team != Team.Enemy)
+                continue;
+
+            Health hp = root.GetComponent<Health>();
+            if (hp == null)
+                continue;
+
+            if (requireDownState && !hp.IsDown)
+            {
+                if (debugLog) Debug.Log($"[Capture] {root.name} 다운 상태 아님 -> 스킵");
+                continue;
+            }
+
+            // ✅ root 기준으로 Capturable 찾기 (콜라이더가 자식에 있어도 안정)
+            Capturable capturable = root.GetComponentInChildren<Capturable>();
+            if (capturable == null)
+            {
+                if (debugLog) Debug.LogWarning($"[Capture] {root.name} Capturable 없음 -> 스킵");
+                continue;
+            }
+
+            // ✅ 확률 굴리기
+            bool success = capturable.TryRecruit();
+
+            if (!success)
+            {
+                if (debugLog) Debug.Log($"[Capture] {root.name} 영입 실패");
+
+                if (destroyOnFail)
+                {
+                    if (disableInsteadOfDestroy)
+                    {
+                        // “사라지게”만 하고 오브젝트는 남김(풀링/리젠 등에 유리)
+                        root.gameObject.SetActive(false);
+                        if (debugLog) Debug.Log($"[Capture] {root.name} 비활성화 처리");
+                    }
+                    else
+                    {
+                        // 완전 제거
+                        Destroy(root.gameObject);
+                        if (debugLog) Debug.Log($"[Capture] {root.name} Destroy 처리");
+                    }
+                }
+
+                return; // 한 번만 시도하고 종료
+            }
+
+            // ✅ 성공 처리
+            team.ConvertToAlly();
+            hp.ReviveFull();
+
+            if (debugLog) Debug.Log($"[Capture] {root.name} → Ally 전환 + Full Revive 완료");
             return;
         }
 
-        GameObject root = team.transform.root.gameObject; // ✅ 모든 처리는 루트 기준
-
-        if (!cap.TryRecruit())
-        {
-            Debug.Log("영입 실패!");
-            Destroy(root); // ✅ 루트 삭제
-            return;
-        }
-
-        // ✅ 영입 성공
-        team.ConvertToAlly();
-
-        // ✅ AllyFollow도 루트에 붙이기
-        AllyFollow follow = root.GetComponent<AllyFollow>();
-        if (follow == null) follow = root.AddComponent<AllyFollow>();
-        follow.enabled = true;
-
-        if (formationManager != null)
-            formationManager.Register(follow);
-
-        if (follow.formation == null || follow.slotIndex < 0)
-        {
-            Debug.LogWarning($"[Capture] Register 후에도 formation/slotIndex 미세팅 -> chase로 임시 전환: formation={(follow.formation ? follow.formation.name : "null")}, slot={follow.slotIndex}");
-            follow.StartChase(transform, 1.2f);
-        }
-        else
-        {
-            follow.StopChase();
-        }
-
-        Debug.Log($"영입 성공! root={root.name} layer={LayerMask.LayerToName(root.layer)}");
+        if (debugLog) Debug.Log("[Capture] 조건 충족 대상 없음");
     }
 
+#if UNITY_EDITOR
     private void OnDrawGizmosSelected()
     {
-        Gizmos.color = Color.yellow;
+        Gizmos.color = Color.cyan;
         Gizmos.DrawWireSphere(transform.position, captureRadius);
     }
+#endif
 }

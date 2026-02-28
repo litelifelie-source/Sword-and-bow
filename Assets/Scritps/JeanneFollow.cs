@@ -1,4 +1,5 @@
 using UnityEngine;
+using System;
 
 [RequireComponent(typeof(Rigidbody2D))]
 public class JeanneFollow : MonoBehaviour
@@ -11,6 +12,11 @@ public class JeanneFollow : MonoBehaviour
     [Header("Refs")]
     public Animator animator;
     public Rigidbody2D rb;
+
+    void OnEnable()
+{
+    Debug.Log($"[ENABLED] {GetType().Name} on {name}\n{Environment.StackTrace}");
+}
 
     [Header("Animator Params")]
     public string paramIsMoving = "IsMoving";

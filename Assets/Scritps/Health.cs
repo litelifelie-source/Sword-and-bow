@@ -23,47 +23,64 @@ public class Health : MonoBehaviour
     public float barWidth = 1.2f;
     public float barHeight = 0.15f;
 
+    [Header("HP Bar Layer")]
+    [Tooltip("HP바(HP_Canvas 및 자식들)를 생성할 때 사용할 '오브젝트 레이어' 이름입니다. (예: UI)\n⚠️ 해당 레이어가 프로젝트에 없으면 Default 레이어로 생성됩니다.")]
+    public string hpBarObjectLayerName = "UI";
+
     [Header("Down (Non-Player)")]
     [Tooltip("플레이어가 아닌 유닛은 HP 0이면 기절(Down) 상태로 만들고, 이동/공격 스크립트를 전부 끕니다.")]
     public bool downOnZeroHP = true;
 
-   [Header("Invincible")]
-   [SerializeField] private bool isInvincible = false;
-   public bool IsInvincible => isInvincible;
+    [Header("Shield")]
+    [SerializeField] private int currentShield = 0;
+    [SerializeField] private float shieldExpireTime = 0f;
+    public int CurrentShield => currentShield;
+    public bool HasShield => currentShield > 0;
 
-public void SetInvincible(bool v)
-{
-    isInvincible = v;
-}
+    [Header("Invincible")]
+    [SerializeField] private bool isInvincible = false;
+    public bool IsInvincible => isInvincible;
+
+    [Header("Damage Modifier")]
+    [Range(0.1f, 2.0f)]
+    public float damageTakenMultiplier = 1f; // 0.75면 25% 피해 감소
+
+    public void SetInvincible(bool v) => isInvincible = v;
 
     [Tooltip("기절 시 꺼줄 스크립트(이동/공격/AI 전부)를 여기에 넣으세요. 비워두면 자동으로 찾아서 끕니다(권장).")]
     public Behaviour[] disableBehavioursOnDown;
 
-    [Tooltip("기절 시 콜라이더도 끄고 싶으면 여기에 넣으세요(선택).")]
+    [Tooltip("기절 시 콜라이더도 끄고 싶으면 여기에 넣으세요(선택). ⚠ 여기에 영입 판정 콜라이더가 들어가면 영입이 안 됩니다.")]
     public Collider2D[] disableCollidersOnDown;
 
-    // ✅ “기절 상태”는 HP값이 아니라 플래그로 고정(중요)
     [SerializeField] private bool isDownFlag = false;
     public bool IsDown => isDownFlag;
 
+    public bool IsDead => (isDownFlag || currentHP <= 0);
+
     private Image hpFill;
+    private Image shieldFill;
     private Transform canvasTransform;
     private Sprite whiteSprite;
 
-    // ✅ Down 시 레이어 변경용
     private int originalLayer;
+
+    public static System.Action<string> OnKillLog;
+    private bool killReported = false;
+
+    [Header("Quest Kill Key (optional)")]
+    [Tooltip("프리팹에서 직접 지정하세요. 병사=Soldier / 궁수=Archer. 비우면 휴리스틱으로 판별합니다.")]
+    public string killKeyOverride = "";
 
     private void Awake()
     {
-        // 루트 기준으로 원래 레이어 저장
         originalLayer = transform.root.gameObject.layer;
     }
 
-    void Start()
+    private void Start()
     {
         currentHP = maxHP;
 
-        // ✅ 플레이어 하트 초기화
         if (isPlayer)
         {
             currentHearts = Mathf.Clamp(maxHearts, 0, 999);
@@ -74,15 +91,18 @@ public void SetInvincible(bool v)
         CreateHPBar();
         RefreshBarColor();
         UpdateHPBar();
+        UpdateShieldBar();
     }
 
-    void LateUpdate()
+    private void LateUpdate()
     {
         if (canvasTransform != null && Camera.main != null)
             canvasTransform.forward = Camera.main.transform.forward;
+
+        if (currentShield > 0 && Time.time >= shieldExpireTime)
+            ClearShield();
     }
 
-    // ✅ 플레이어 하트 UI 동기화
     private void SyncHeartsUI()
     {
         if (!isPlayer) return;
@@ -99,50 +119,75 @@ public void SetInvincible(bool v)
             hpFill.color = new Color(0.27f, 0.58f, 1f);
         else
             hpFill.color = new Color(0.85f, 0.2f, 0.2f);
+
+        if (shieldFill != null)
+            shieldFill.color = new Color(0.35f, 0.9f, 1f, 0.85f);
     }
 
     public void TakeDamage(int damage)
- {
-    // ✅ 이미 기절/사망 처리된 상태면 무시
-    if (isDownFlag) return;
-    if (currentHP <= 0) return;
-    if (isInvincible) return;
-
-    currentHP -= damage;
-    currentHP = Mathf.Clamp(currentHP, 0, maxHP);
-
-    UpdateHPBar();
-
-    if (currentHP <= 0)
     {
-        if (isPlayer)
+        if (isDownFlag) return;
+        if (currentHP <= 0) return;
+        if (isInvincible) return;
+        if (damage <= 0) return;
+
+        damage = Mathf.CeilToInt(damage * damageTakenMultiplier);
+        if (damage <= 0) return;
+
+        if (currentShield > 0)
         {
-            Die_Player();
-            return;
+            int absorb = Mathf.Min(currentShield, damage);
+            currentShield -= absorb;
+            damage -= absorb;
+            UpdateShieldBar();
+
+            if (damage <= 0) return;
         }
 
-        // ✅ 팀 확인
-        UnitTeam t = ResolveTeam();
+        currentHP -= damage;
+        currentHP = Mathf.Clamp(currentHP, 0, maxHP);
 
-        // ✅ Ally는 죽으면 제거(Destroy)
-        if (t != null && t.team == Team.Ally)
+        UpdateHPBar();
+
+        if (currentHP <= 0)
         {
-            Die_DestroyNonPlayer();
-            return;
-        }
+            if (isPlayer)
+            {
+                Die_Player();
+                return;
+            }
 
-        // ✅ Enemy만 기절(영입용)
-        if (downOnZeroHP) Down_NonPlayer();
-        else Die_DestroyNonPlayer();
+            ReportKillIfEnemy();
+
+            UnitTeam t = ResolveTeam();
+
+            if (t != null && t.team == Team.Ally)
+            {
+                Die_DestroyNonPlayer();
+                return;
+            }
+
+            if (downOnZeroHP) Down_NonPlayer();
+            else Die_DestroyNonPlayer();
+        }
     }
-}
 
-    // ✅ 플레이어 하트만 리셋하고 싶을 때(예: 재시작)
     public void ResetHeartsToMax()
     {
         if (!isPlayer) return;
         currentHearts = Mathf.Clamp(maxHearts, 0, 999);
         SyncHeartsUI();
+    }
+
+    public void Heal(int amount)
+    {
+        if (amount <= 0) return;
+        if (isDownFlag) return;
+        if (currentHP <= 0) return;
+        if (currentHP >= maxHP) return;
+
+        currentHP = Mathf.Clamp(currentHP + amount, 0, maxHP);
+        UpdateHPBar();
     }
 
     public void RestoreFullHP()
@@ -151,23 +196,88 @@ public void SetInvincible(bool v)
         UpdateHPBar();
     }
 
-    // ✅ (선택) 기절 해제 + HP 회복까지 한 번에 하고 싶으면 이걸 쓰세요
     public void ReviveFull()
     {
         isDownFlag = false;
         currentHP = maxHP;
         UpdateHPBar();
+
+        foreach (var col in transform.root.GetComponentsInChildren<Collider2D>(true))
+        {
+            col.isTrigger = false;
+            col.enabled = true;
+        }
+
+        Rigidbody2D rb = transform.root.GetComponent<Rigidbody2D>();
+        if (rb != null && rb.bodyType == RigidbodyType2D.Kinematic)
+            rb.bodyType = RigidbodyType2D.Dynamic;
     }
 
-    void UpdateHPBar()
+    private void UpdateHPBar()
     {
         if (hpFill != null)
             hpFill.fillAmount = (float)currentHP / maxHP;
     }
 
-    // ----------------------------
-    // HP 0 처리
-    // ----------------------------
+    private void UpdateShieldBar()
+    {
+        if (shieldFill == null) return;
+
+        float ratio = 0f;
+        if (maxHP > 0) ratio = (float)currentShield / maxHP;
+
+        shieldFill.fillAmount = Mathf.Clamp01(ratio);
+
+        var c = shieldFill.color;
+        c.a = (currentShield > 0) ? 0.85f : 0f;
+        shieldFill.color = c;
+    }
+
+    public void GrantShield(int amount, float duration)
+    {
+        if (amount <= 0) return;
+        if (isDownFlag) return;
+        if (currentHP <= 0) return;
+
+        currentShield = Mathf.Max(currentShield, amount);
+        shieldExpireTime = Time.time + Mathf.Max(0f, duration);
+        UpdateShieldBar();
+    }
+
+    public void ClearShield()
+    {
+        currentShield = 0;
+        shieldExpireTime = 0f;
+        UpdateShieldBar();
+    }
+
+    private void ReportKillIfEnemy()
+    {
+        if (killReported) return;
+        if (isPlayer) return;
+
+        UnitTeam t = ResolveTeam();
+        if (t == null) return;
+        if (t.team != Team.Enemy) return;
+
+        killReported = true;
+
+        string key = killKeyOverride;
+
+        if (string.IsNullOrEmpty(key))
+        {
+            bool isArcher = transform.root.GetComponentInChildren<EnemyArcherAttack>(true) != null;
+            key = isArcher ? "Archer" : "Soldier";
+        }
+
+        if (QuestManager.I != null)
+            QuestManager.I.PushEvent(QuestEventType.KillEnemy, key, 1);
+
+        string msg = (key == "Archer") ? "🏹 궁수 처치" : "🗡 병사 처치";
+        OnKillLog?.Invoke(msg);
+
+        Debug.Log($"[KILL] {msg} / {transform.root.name}");
+    }
 
     private void Die_Player()
     {
@@ -178,6 +288,7 @@ public void SetInvincible(bool v)
 
         if (currentHearts > 0)
         {
+            ClearShield();
             currentHP = maxHP;
             UpdateHPBar();
             return;
@@ -192,13 +303,24 @@ public void SetInvincible(bool v)
         if (isDownFlag) return;
         isDownFlag = true;
 
+        ClearShield();
+
         Debug.Log($"[Down] {name} HP=0 -> 이동/공격 스크립트 OFF (기절)");
 
-        // ✅ 물리 멈춤
-        Rigidbody2D rb2d = transform.root.GetComponent<Rigidbody2D>();
-        if (rb2d != null) rb2d.linearVelocity = Vector2.zero;
+        foreach (var col in transform.root.GetComponentsInChildren<Collider2D>())
+        {
+            col.isTrigger = true;
+        }
 
-        // 1) 인스펙터에 지정된 스크립트 끄기
+        Rigidbody2D rb = transform.root.GetComponent<Rigidbody2D>();
+        if (rb != null)
+        {
+            rb.linearVelocity = Vector2.zero;
+            rb.angularVelocity = 0f;
+            rb.bodyType = RigidbodyType2D.Kinematic;
+            rb.simulated = true;
+        }
+
         bool usedExplicitList = disableBehavioursOnDown != null && disableBehavioursOnDown.Length > 0;
         if (usedExplicitList)
         {
@@ -207,11 +329,9 @@ public void SetInvincible(bool v)
         }
         else
         {
-            // 2) ✅ 자동: 전투/이동/공격 관련 MonoBehaviour를 찾아서 끄기(Health/UnitTeam/HeartsUI는 제외)
             DisableCombatScriptsAutomatically();
         }
 
-        // (선택) 콜라이더 끄기
         if (disableCollidersOnDown != null && disableCollidersOnDown.Length > 0)
         {
             foreach (var c in disableCollidersOnDown)
@@ -227,24 +347,18 @@ public void SetInvincible(bool v)
 
     private void DisableCombatScriptsAutomatically()
     {
-        // ✅ 루트 기준으로 전부 긁어서 끈다(그래야 자식에 붙은 공격 스크립트도 꺼짐)
         var monos = transform.root.GetComponentsInChildren<MonoBehaviour>(true);
 
         foreach (var m in monos)
         {
             if (m == null) continue;
-            if (m == this) continue;                // Health는 끄면 안 됨
-            if (m is UnitTeam) continue;            // 팀 정보 유지
-            if (m is HeartsUI) continue;            // UI 유지(혹시 붙어있다면)
+            if (m == this) continue;
+            if (m is UnitTeam) continue;
+            if (m is HeartsUI) continue;
 
-            // ✅ 핵심: "움직임/공격/AI"는 대부분 MonoBehaviour라 그냥 꺼도 됨
             m.enabled = false;
         }
     }
-
-    // ----------------------------
-    // 팀/컴포넌트 탐색
-    // ----------------------------
 
     private UnitTeam ResolveTeam()
     {
@@ -269,37 +383,28 @@ public void SetInvincible(bool v)
         return null;
     }
 
-    // ----------------------------
-    // Stun Layer 처리
-    // ----------------------------
-
-    private void ApplyStunLayer()
-    {
-        int stunLayer = LayerMask.NameToLayer("Stun");
-        if (stunLayer != -1)
-            SetLayerRecursively(transform.root.gameObject, stunLayer);
-    }
-
-    private void SetLayerRecursively(GameObject obj, int layer)
-    {
-        obj.layer = layer;
-        for (int i = 0; i < obj.transform.childCount; i++)
-            SetLayerRecursively(obj.transform.GetChild(i).gameObject, layer);
-    }
-
-    // ----------------------------
-    // HP Bar 생성
-    // ----------------------------
-
-    void CreateHPBar()
+    private void CreateHPBar()
     {
         whiteSprite = CreateWhiteSprite();
+
+        int layer = LayerMask.NameToLayer(hpBarObjectLayerName);
+        if (layer < 0)
+        {
+            Debug.LogWarning($"[Health] Layer '{hpBarObjectLayerName}'가 없어서 HP바를 Default 레이어로 생성합니다. (Project Settings > Tags and Layers에서 레이어 추가하세요)");
+            layer = 0; // Default
+        }
 
         GameObject canvasObj = new GameObject("HP_Canvas");
         canvasObj.transform.SetParent(transform);
         canvasObj.transform.localPosition = barOffset;
 
+        // ✅ 생성 직후부터 오브젝트 레이어를 UI로 고정 (Default로 찍히는 구간 제거)
+        SetLayerRecursively(canvasObj, layer);
+
         Canvas canvas = canvasObj.AddComponent<Canvas>();
+        canvas.overrideSorting = true;
+        canvas.sortingLayerName = "UI";
+        canvas.sortingOrder = 500;
         canvas.renderMode = RenderMode.WorldSpace;
 
         canvasObj.AddComponent<CanvasScaler>();
@@ -313,6 +418,7 @@ public void SetInvincible(bool v)
 
         GameObject backObj = new GameObject("HP_Back");
         backObj.transform.SetParent(canvasObj.transform, false);
+        backObj.layer = layer;
 
         Image backImage = backObj.AddComponent<Image>();
         backImage.sprite = whiteSprite;
@@ -326,10 +432,10 @@ public void SetInvincible(bool v)
 
         GameObject fillObj = new GameObject("HP_Fill");
         fillObj.transform.SetParent(backObj.transform, false);
+        fillObj.layer = layer;
 
         hpFill = fillObj.AddComponent<Image>();
         hpFill.sprite = whiteSprite;
-
         hpFill.type = Image.Type.Filled;
         hpFill.fillMethod = Image.FillMethod.Horizontal;
         hpFill.fillOrigin = (int)Image.OriginHorizontal.Left;
@@ -339,6 +445,32 @@ public void SetInvincible(bool v)
         fillRect.anchorMax = new Vector2(0.5f, 0.5f);
         fillRect.sizeDelta = canvasRect.sizeDelta;
         fillRect.anchoredPosition = Vector2.zero;
+
+        GameObject shieldObj = new GameObject("Shield_Fill");
+        shieldObj.transform.SetParent(backObj.transform, false);
+        shieldObj.layer = layer;
+
+        shieldFill = shieldObj.AddComponent<Image>();
+        shieldFill.sprite = whiteSprite;
+        shieldFill.type = Image.Type.Filled;
+        shieldFill.fillMethod = Image.FillMethod.Horizontal;
+        shieldFill.fillOrigin = (int)Image.OriginHorizontal.Left;
+
+        RectTransform shieldRect = shieldObj.GetComponent<RectTransform>();
+        shieldRect.anchorMin = new Vector2(0.5f, 0.5f);
+        shieldRect.anchorMax = new Vector2(0.5f, 0.5f);
+        shieldRect.sizeDelta = canvasRect.sizeDelta;
+        shieldRect.anchoredPosition = Vector2.zero;
+
+        RefreshBarColor();
+        UpdateShieldBar();
+    }
+
+    private void SetLayerRecursively(GameObject obj, int layer)
+    {
+        obj.layer = layer;
+        foreach (Transform child in obj.transform)
+            SetLayerRecursively(child.gameObject, layer);
     }
 
     private Sprite CreateWhiteSprite()

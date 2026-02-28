@@ -174,4 +174,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: e77d9d6a7943b674a9da8c4ba915bcc1, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::AttackEffect
-  damage: 4
+  damage: 12
+  debugLog: 0
+  ownerRoot: {fileID: 0}

@@ -20,6 +20,7 @@ GameObject:
   - component: {fileID: 4954724588010270792}
   - component: {fileID: -4944796715830900037}
   - component: {fileID: -6462663202211988731}
+  - component: {fileID: -5479841331920126477}
   m_Layer: 6
   m_Name: Enemy Archer
   m_TagString: Untagged
@@ -135,7 +136,19 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 9a3bc6eb7260d1040b3f7b2cb07f1c20, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::UnitTeam
-  team: 0
+  team: 1
+  npcLayerName: NPC
+  allyLayerName: Ally
+  enemyLayerName: Enemy
+  applyRoot: {fileID: 0}
+  changeLayer: 1
+  toggleScriptsByPrefix: 1
+  freezeAllWhenNPC: 1
+  excludeFromLayerChange:
+    serializedVersion: 2
+    m_Bits: 32
+  followScript: {fileID: 0}
+  enableFollowOnlyWhenAlly: 1
 --- !u!114 &3169714900227448321
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -157,12 +170,18 @@ MonoBehaviour:
   barOffset: {x: 0, y: -1, z: 0}
   barWidth: 1.2
   barHeight: 0.15
+  hpBarObjectLayerName: UI
   downOnZeroHP: 1
+  currentShield: 0
+  shieldExpireTime: 0
+  isInvincible: 0
+  damageTakenMultiplier: 1
   disableBehavioursOnDown:
   - {fileID: -6462663202211988731}
   - {fileID: 6391926551303977625}
   disableCollidersOnDown: []
   isDownFlag: 0
+  killKeyOverride: 
 --- !u!114 &1139720872649000742
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -257,7 +276,7 @@ MonoBehaviour:
   projectileSpawnOffset: 0.6
   attackRange: 5.5
   attackCooldown: 1.45
-  damage: 6
+  damage: 10
   animator: {fileID: 0}
   sr: {fileID: 0}
 --- !u!114 &4954724588010270792
@@ -272,14 +291,18 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: cb4eb9016dddb154291070f6416d9ba7, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::AllyFollow
+  autoRegisterToPlayerFormation: 1
+  playerTag: Player
+  findFormationInChildren: 1
+  autoRegisterRetryInterval: 0.5
   formation: {fileID: 0}
   slotIndex: -1
-  moveSpeed: 2
-  stopDistance: 0.25
-  blockMove: 0
-  chaseMode: 0
-  chaseTarget: {fileID: 0}
-  chaseStopDistance: 1.2
+  moveSpeed: 1.8
+  formationStopDist: 0.08
+  anim: {fileID: 0}
+  paramIsMoving: IsMoving
+  paramMoveX: MoveX
+  paramMoveY: MoveY
 --- !u!114 &-4944796715830900037
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -294,10 +317,10 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::AllyArcherAttack
   projectilePrefab: {fileID: 2368780422596536688, guid: 63bd0e3432a439a4cb13e553e460a6b7, type: 3}
   projectileSpawnOffset: 0.6
-  detectRange: 8
+  detectRange: 10
   attackRange: 6
   attackCooldown: 1.4
-  damage: 6
+  damage: 10
   enemyLayer:
     serializedVersion: 2
     m_Bits: 64
@@ -315,10 +338,32 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 050a23723e785f54ba010d3037759cc4, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::EnemyAI_Archer
-  moveSpeed: 2
+  moveSpeed: 1.8
   detectionRange: 10
   attackRange: 5
   keepAwayRange: 3
+  keepAwayHysteresis: 0.3
   targetLayer:
     serializedVersion: 2
     m_Bits: 136
+--- !u!114 &-5479841331920126477
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2538681527642726448}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d48fc3c2081ad7a4d9b5b76365419a3a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::UnitTeamAllyToggle
+  unitTeam: {fileID: 0}
+  applyRootOverride: {fileID: 0}
+  autoFindAllyScripts: 0
+  autoFindEnemyScripts: 0
+  allyEnableList:
+  - {fileID: 4954724588010270792}
+  - {fileID: -4944796715830900037}
+  enemyEnableList: []
+  debugLog: 0

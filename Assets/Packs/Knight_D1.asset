@@ -1,0 +1,58 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 31072b4819e1a334f853ec3b2694c7ba, type: 3}
+  m_Name: Knight_D1
+  m_EditorClassIdentifier: Assembly-CSharp::DailyDialoguePack
+  questId: D1
+  nodes:
+  - key: D1
+    speaker: "\uAE30\uC0AC"
+    speakerId: Knight_D1
+    main:
+    - speaker: 
+      speakerId: 
+      text: "\uC790\uB124 \uADF8 \uC18C\uC2DD \uB4E4\uC5C8\uB098?"
+      autoAdvanceSeconds: 4
+      audience: 0
+    - speaker: "\uAE30\uC0AC"
+      speakerId: Knight_D2
+      text: "\uBB50 \uB9D0\uC778\uAC00?"
+      autoAdvanceSeconds: 3
+      audience: 0
+    - speaker: 
+      speakerId: 
+      text: "\uBD81\uBD80 \uC804\uC120\uC774 \uD55C \uBC88 \uBC00\uB838\uB2E4\uB354\uAD70."
+      autoAdvanceSeconds: 4.5
+      audience: 0
+    - speaker: "\uAE30\uC0AC"
+      speakerId: Knight_D2
+      text: "\uBD81\uBD80 \uC804\uC120\uC774? \uAC70\uAE30 \uAE30\uC0AC\uC7A5 \uB2D8
+        \uAF64 \uAC15\uD558\uC9C0 \uC54A\uB098?"
+      autoAdvanceSeconds: 6
+      audience: 0
+    - speaker: 
+      speakerId: 
+      text: "\uBC18\uAD70\uB4E4\uC774 \uB4DD\uC2E4\uAC70\uB9AC\uB2C8 \uC5B4\uCA54
+        \uC218 \uC5C6\uC9C0, \uBB50."
+      autoAdvanceSeconds: 6
+      audience: 0
+    - speaker: "\uAE30\uC0AC"
+      speakerId: Knight_D2
+      text: "\uD558\uAE34.. \uC774\uCABD\uC740 \uB110\uB110\uD558\uB2C8\uAE4C. \uADFC\uB370
+        \uB0A8\uC77C \uAC19\uC9C4 \uC54A\uAD70. "
+      autoAdvanceSeconds: 6.7
+      audience: 0
+    ally: []
+    lines: []
+    playOnlyOnce: 0
+    defaultAutoAdvanceSeconds: 0
+    perLineAutoAdvanceSeconds: []

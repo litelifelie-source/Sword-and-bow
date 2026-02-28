@@ -3,15 +3,16 @@ using UnityEngine;
 public class Capturable : MonoBehaviour
 {
     [Header("Recruit Chance (0~1)")]
+    [Tooltip("0이면 0%, 1이면 100% 확률입니다.")]
     [Range(0f, 1f)]
-    public float recruitChance = 0.7f; // 0.85 = 85%
+    public float recruitChance = 0.7f;
 
     [Header("Debug")]
-    public bool debugLog = true;   // 확률이 진짜 적용되는지 확인용
+    public bool debugLog = true;
 
     public bool TryRecruit()
     {
-        float roll = Random.value;     // 0.0 ~ 1.0
+        float roll = Random.value; // 0.0 이상 1.0 미만
         bool success = roll < recruitChance;
 
         if (debugLog)
